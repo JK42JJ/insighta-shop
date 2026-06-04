@@ -1,0 +1,35 @@
+# Secrets — 절대 커밋 금지
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+dist/
+*.egg-info/
+
+# Node (console/)
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local artifacts
+logs/
+*.log
+.memsearch/
+.claude/settings.local.json
