@@ -55,3 +55,10 @@ jobs:
         env:
           DATABASE_URL: postgresql+psycopg://insighta:insighta@localhost:5433/insighta_test
         run: uv run pytest
+
+      # 백업-키 분리 회귀 (M1, F6.3): pg_dump 산출물에 KEK/평문 미포함을 강제 (스킵 불가)
+      - name: Backup/KEK separation regression
+        env:
+          DATABASE_URL: postgresql+psycopg://insighta:insighta@localhost:5433/insighta_test
+          REQUIRE_PG_DUMP: "1"
+        run: uv run pytest tests/test_backup_kek_separation.py -v

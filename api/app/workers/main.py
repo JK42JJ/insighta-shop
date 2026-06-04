@@ -13,6 +13,12 @@ from app.core.db import get_session_factory
 from app.core.jobs import JobRunner
 from app.core.logging import setup_logging
 from app.core.scheduler import build_scheduler
+from app.workers.pii import (
+    PII_PURGE_ENQUEUE_HOUR_UTC,
+    PII_PURGE_JOB_TYPE,
+    enqueue_pii_purge_job,
+    handle_pii_purge,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +34,7 @@ def _handle_signal(signum: int, frame: FrameType | None) -> None:
 def build_runner() -> JobRunner:
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
     runner = JobRunner(get_session_factory(), worker_id)
+    runner.register(PII_PURGE_JOB_TYPE, handle_pii_purge)
     # M3+: runner.register("order_dispatch", handle_order_dispatch) 등
     return runner
 
@@ -38,6 +45,13 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     scheduler = build_scheduler()
+    scheduler.add_job(
+        enqueue_pii_purge_job,
+        "cron",
+        hour=PII_PURGE_ENQUEUE_HOUR_UTC,
+        minute=0,
+        id="pii_purge_enqueue",
+    )
     scheduler.start()
     logger.info("worker started")
     try:

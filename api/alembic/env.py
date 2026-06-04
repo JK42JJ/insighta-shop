@@ -5,10 +5,12 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # 모델 메타데이터 로드 (autogenerate 대비 전체 모델 import)
+from app.compliance.models import ComplianceRule  # noqa: F401
 from app.core.config import get_settings
 from app.core.jobs import Job  # noqa: F401
 from app.core.models import Base
 from app.domain.models import AuditLog, Store  # noqa: F401
+from app.domain.pii import CustomerPii  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

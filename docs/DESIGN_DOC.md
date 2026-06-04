@@ -18,7 +18,7 @@
 | v0.1 (무거움) | v0.2 (경량) | 업그레이드 트리거 (V1+) |
 |---|---|---|
 | SQS 큐 | Postgres `job` 테이블 (`FOR UPDATE SKIP LOCKED`) | 잡 처리량 > 수천 건/분, 멀티 호스트 워커 |
-| EventBridge 스케줄러 | APScheduler (워커 프로세스 내장) | 워커 다중화로 스케줄 중복 실행 위험 시 |
+| EventBridge 스케줄러 | APScheduler (워커 프로세스 내장). **단일 인스턴스 규약**: 스케줄 잡은 직접 실행하지 않고 멱등키 단 job enqueue만 — 중복 트리거가 나도 정합성은 unique 제약이 보장 | 워커 다중화로 스케줄 중복 실행 위험 시 |
 | Redis (ElastiCache) — 락/멱등/캐시 | Postgres advisory lock + unique 제약(멱등키) + 인프로세스 캐시 | 캐시 적중률이 병목, 분산락 경합 증가 |
 | KMS 봉투암호화 | 앱 레벨 봉투암호화 (`cryptography` AES-256-GCM, 마스터키는 env) | 운영 인력 증가, 감사 요건 강화 → KMS 전환 |
 | Secrets Manager | `.env` (로컬) / EC2 환경변수 주입 (운영) | 시크릿 로테이션 자동화 필요 시 |
@@ -240,9 +240,26 @@ sequenceDiagram
 - 버킷 2개: `insighta-assets`(공개 CDN 대상), `insighta-raw`(원본/백업, 비공개).
 - 캐시 무효화는 버전드 키(`/<product>/<hash>.webp`)로 회피 — invalidation 비용 절감.
 
-### 8.2 PII (개인통관고유부호 등)
-- `customer_pii`는 **앱 레벨 봉투암호화** (`cryptography` AES-256-GCM): 마스터키(env `PII_MASTER_KEY`)로 레코드별 DEK를 감싼다. `key_version`으로 로테이션 대비. **V1에서 마스터키를 KMS로 이관 — encrypt/decrypt 인터페이스는 동일 유지.**
-- 평문 로그 절대 금지(마스킹 미들웨어). 목적 외 노출 차단, `retain_until` 경과 시 파기 배치(APScheduler 일일 잡).
+### 8.2 PII (개인통관고유부호 등) — M1 확정 설계
+
+**봉투 구조 (진짜 봉투 — 레코드별 DEK를 마스터 KEK로 래핑, `app/core/security.py`):**
+
+```
+blob = [1B fmt=0x01][1B key_version][12B nonce_k][48B wrapped DEK][12B nonce_d][data_ct+tag]
+aad  = "insighta-shop:pii:v1:{store_id}:{type}"   # 불변 항목만 (order_id 등 가변 금지)
+```
+
+- KEK 교체(로테이션/V1 KMS 전환) = **wrapped DEK 재포장만**, 데이터 재암호화 불필요. `key_version` → KEK 링 매핑이 전환점.
+- **nonce 규칙:** 매 암호화마다 `os.urandom(12)`. blob에 저장, 재사용·결정적 파생 금지.
+- **에러 정책:** 복호화 실패/KEK 부재/key_version 미스 → 조용한 빈 값 금지, 타입드 예외 + `audit_log`(`pii_decrypt_failed`, 별도 세션 즉시 커밋) 기록. 예외·감사에 평문/키 조각 미포함.
+
+**키-백업 분리 보장 ("백업이 암호문이라 안전"의 전제):**
+- KEK는 프로세스 env로만 존재 (운영: `/etc/insighta-shop/secrets.env` 0600, compose `env_file`은 **api/worker 서비스에만** — postgres 서비스 주입 금지).
+- KEK는 DB에 어떤 형태로도 저장되지 않음 → `pg_dump` 백업에 구조적으로 포함 불가.
+- 회귀 테스트(`tests/test_backup_kek_separation.py`, CI `REQUIRE_PG_DUMP=1` 강제): pg_dump 산출물에 KEK(평문/base64/hex)·PII 평문 미포함 검증.
+
+- 평문 로그 절대 금지: 설계상 어댑터 경계 밖 비노출 + JSON 로그 최종 출력 마스킹 필터(2중 방어).
+- `retain_until` 경과 시 파기: 스케줄러가 일일 `pii_purge` 잡 enqueue(멱등키 `pii_purge:{날짜}`) → 워커 처리 + audit_log.
 - 개인정보보호법 기준 최소 수집·최소 보존.
 
 ### 8.3 시크릿/접근
@@ -256,6 +273,7 @@ sequenceDiagram
 
 ### 8.5 백업
 - 야간 `pg_dump` → `insighta-raw` S3 업로드 (APScheduler 잡). 복구 절차 README에 문서화.
+- 업로드 대상은 `*.sql.gz` 단일 아티팩트로 고정(디렉터리 통째 업로드 금지 — env 파일 혼입 차단). 버킷 비공개 + SSE-S3 + 수명주기 30일.
 
 ## 9. 비용 개략 (Cost Estimate, 월, 초기 규모)
 

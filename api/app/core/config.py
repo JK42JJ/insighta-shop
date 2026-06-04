@@ -1,12 +1,16 @@
 """중앙 설정 — env 읽기는 반드시 이 모듈 경유 (CLAUDE.md §10-3 하드코딩 금지)."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 레포 루트의 .env (cwd 무관). 실제 env var가 .env보다 우선한다 (pydantic-settings 기본).
+_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     APP_ENV: str = "local"
     DATABASE_URL: str = "postgresql+psycopg://insighta:insighta@localhost:5433/insighta"

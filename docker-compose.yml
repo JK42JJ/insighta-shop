@@ -1,9 +1,14 @@
 # 로컬 의존성은 postgres 하나 (Design Doc §0)
 # 포트 5433: insighta 본 프로젝트의 Supabase가 5432를 점유하므로 회피
+#
+# [키-백업 분리 규약, M1] 운영 compose에서 secrets env_file(PII_MASTER_KEY 등)은
+# api/worker 서비스에만 주입한다. postgres 서비스에는 절대 주입 금지 —
+# DB 프로세스/덤프 경로에 KEK가 흘러들지 않게 하는 구조적 분리선이다.
 services:
   postgres:
     image: postgres:16-alpine
     container_name: insighta-shop-db
+    # 이 서비스에 env_file 추가 금지 (위 규약). DB 접속정보만 명시적 environment로.
     environment:
       POSTGRES_USER: insighta
       POSTGRES_PASSWORD: insighta

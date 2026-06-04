@@ -1,4 +1,4 @@
-.PHONY: install dev dev-api dev-worker migrate revision test lint fmt
+.PHONY: install dev dev-api dev-worker migrate revision test lint fmt seed-compliance
 
 install:
 	cd api && uv sync
@@ -26,3 +26,6 @@ lint:
 
 fmt:
 	cd api && uv run ruff check --fix . && uv run ruff format .
+
+seed-compliance:
+	cd api && uv run python -m app.compliance.seed_loader
