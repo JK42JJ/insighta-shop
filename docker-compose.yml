@@ -1,0 +1,23 @@
+# 로컬 의존성은 postgres 하나 (Design Doc §0)
+# 포트 5433: insighta 본 프로젝트의 Supabase가 5432를 점유하므로 회피
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: insighta-shop-db
+    environment:
+      POSTGRES_USER: insighta
+      POSTGRES_PASSWORD: insighta
+      POSTGRES_DB: insighta
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insighta -d insighta"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

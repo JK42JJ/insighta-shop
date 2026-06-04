@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: insighta
+          POSTGRES_PASSWORD: insighta
+          POSTGRES_DB: insighta
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U insighta"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://insighta:insighta@localhost:5433/insighta
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install deps
+        run: uv sync
+
+      - name: Lint (ruff)
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Typecheck (mypy)
+        run: uv run mypy app
+
+      - name: Create test DB
+        run: |
+          PGPASSWORD=insighta psql -h localhost -p 5433 -U insighta -d insighta \
+            -c "CREATE DATABASE insighta_test OWNER insighta"
+
+      - name: Migrate (alembic upgrade head)
+        run: uv run alembic upgrade head
+
+      - name: Test (pytest)
+        env:
+          DATABASE_URL: postgresql+psycopg://insighta:insighta@localhost:5433/insighta_test
+        run: uv run pytest
